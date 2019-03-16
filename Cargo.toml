@@ -1,0 +1,12 @@
+[package]
+name = "gitloose"
+version = "0.1.0"
+authors = ["John (Jack) Brown <jack@brownjohnf.com>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.2"
+reqwest = "0.9"
+serde_derive = "1.0"
+serde = ""
+serde_json = ""
