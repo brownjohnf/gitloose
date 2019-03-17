@@ -2,62 +2,89 @@
 extern crate serde_derive;
 extern crate structopt;
 extern crate reqwest;
+extern crate serde;
 
 use structopt::StructOpt;
-use std::collections::HashMap;
+use reqwest::Url;
 
-/// A basic example
 #[derive(StructOpt, Debug)]
 #[structopt(name = "basic")]
+/// List and create GitHub releases
 struct Opt {
-    // A flag, true if used in the command line. Note doc comment will
-    // be used for the help message of the flag.
-    /// Activate debug mode
-    #[structopt(short = "d", long = "debug")]
-    debug: bool,
+    /// Github org name
+    #[structopt(short, long)]
+    org: String,
+    /// Github repo name
+    #[structopt(short, long)]
+    repo: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Release {
-    name: String
+    url: String,
+    tag_name: String,
+    created_at: String,
+    published_at: String,
 }
 
-impl Release {
-    fn new() -> Release {
-        Release {
-            name: String::from("foobar")
-        }
-    }
+struct Org {
+    name: String,
+}
+
+struct Repo<'a> {
+    org: &'a Org,
+    name: String,
 }
 
 fn main() {
     let opt = Opt::from_args();
-    match make_request() {
+
+    let org = Org {
+        name: opt.org,
+    };
+
+    let repo = Repo {
+        org: &org,
+        name: opt.repo,
+    };
+
+    match list_releases(&repo) {
         Ok(res) => println!("{:?}", res),
         Err(err) => println!("{:?}", err),
     }
+
     println!("Hello, world!");
 }
 
-fn make_request() -> Result<reqwest::Response, reqwest::Error> {
+fn list_releases(repo: & Repo) -> Result<Vec<Release>, reqwest::Error> {
     let client = reqwest::Client::new();
-    let req = client.get("https://api.github.com/repos/brownjohnf/slit/releases");
-
-    let res = req.send()?;
-    println!("{:?}", res);
-
-    return Ok(res);
-            /*
-    match &res {
-        Ok(d) => {
-            match d {
-                Response(r) => {
-                    return Some(releases[0]);
-                }
-            }
-            println!("{:?}", d);
+    let s = format!("https://api.github.com/repos/{}/{}/releases", repo.org.name, repo.name);
+    match Url::parse(&s) {
+        Ok(url) => {
+            let req = client.get(url);
+            let out: Vec<Release> = req.send()?.json()?;
+            return Ok(out);
         }
-        Err(err) => ()
+        Err(err) => {
+            panic!("{:?}", err);
+        }
     }
-            */
+
+
+
+        /*
+    if let Ok(mut res) = req.send() {
+        println!("{:?}", res);
+        match res.json() {
+            Ok(json) => {
+                let out: Vec<Response> = json;
+                return out;
+            },
+            Err(err) => {
+                println!("{:?}", err);
+                return err;
+            }
+        }
+    }
+    */
 }
