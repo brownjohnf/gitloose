@@ -137,7 +137,7 @@ fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
         repo.org.name, repo.name, version
     );
 
-    match authenticated_request(reqwest::Method::GET, &s)?.send() {
+    match get(&s)?.send() {
         Ok(mut res) => match res.json() {
             Ok(json) => {
                 let out: Release = json;
@@ -180,6 +180,14 @@ fn authenticated_request(
     }
 }
 
+fn get(url: &str) -> Result<reqwest::RequestBuilder, Error> {
+    return authenticated_request(reqwest::Method::GET, url);
+}
+
+fn post(url: &str) -> Result<reqwest::RequestBuilder, Error> {
+    return authenticated_request(reqwest::Method::POST, url);
+}
+
 fn create_release(
     repo: &Repo,
     version: &String,
@@ -197,10 +205,7 @@ fn create_release(
         map.insert("target_commitish", tgt);
     }
 
-    let client = authenticated_request(reqwest::Method::POST, &s)?;
-
-    let req = client.json(&map);
-    match req.send() {
+    match post(&s)?.json(&map).send() {
         Ok(mut res) => match res.json() {
             Ok(json) => {
                 let out: Release = json;
@@ -235,7 +240,7 @@ fn upload(repo: &Repo, version: &String, file: &String) -> Result<Asset, Error> 
         Err(err) => panic!("{:?}", err),
     };
 
-    match authenticated_request(reqwest::Method::POST, &s)?
+    match post(&s)?
         .header(CONTENT_TYPE, "multipart/form-data")
         .query(&[("name", file)])
         .body(f)
@@ -269,7 +274,7 @@ fn list_releases(repo: &Repo) -> Result<Vec<Release>, Error> {
         repo.org.name, repo.name
     );
 
-    match authenticated_request(reqwest::Method::GET, &s)?.send() {
+    match get(&s)?.send() {
         Ok(mut res) => match res.json() {
             Ok(json) => {
                 let out: Vec<Release> = json;
