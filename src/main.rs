@@ -74,6 +74,7 @@ struct Release {
     tag_name: String,
     created_at: String,
     published_at: String,
+    assets: Vec<Asset>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,10 +95,12 @@ struct Repo<'a> {
     name: String,
 }
 
-
-fn run<T>(res: Result<T, Error>) {
+fn run<T: std::fmt::Debug>(res: Result<T, Error>) {
     std::process::exit(match res {
-        Ok(_) => 0,
+        Ok(out) => {
+            eprintln!("{:?}", out);
+            0
+        },
         Err(err) => {
             eprintln!("{}", err.message);
             1
@@ -130,27 +133,21 @@ fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
     );
 
     match get(&s)?.send() {
-        Ok(mut res) => {
-            if !res.status().is_success() {
-                return Err(Error {
-                    message: format!("get: Unsuccessful response: {:?}", res.status().canonical_reason().unwrap()),
-                });
-            }
-            match res.json() {
+        Ok(res) => match success_handler(res) {
+            Ok(mut succ) => match succ.json() {
                 Ok(json) => {
                     let out: Release = json;
-                    return Ok(out);
+                    Ok(out)
                 }
                 Err(err) => {
-                    return Err(Error {
+                    Err(Error {
                         message: format!("get: Error extracting json: {}", err.to_string()),
-                    });
+                    })
                 }
-            }
+            },
+            Err(err) => Err(err),
         },
-        Err(err) => {
-            panic!("{:?}", err);
-        }
+        Err(err) => error_handler(err),
     }
 }
 
@@ -170,22 +167,38 @@ fn authenticated_request(
 
     match Url::parse(&url) {
         Ok(u) => {
-            return Ok(client.request(method, u).bearer_auth(token));
+            Ok(client.request(method, u).bearer_auth(token))
         }
         Err(err) => {
-            return Err(Error {
+            Err(Error {
                 message: err.to_string(),
-            });
+            })
         }
     }
 }
 
+fn error_handler<T>(err: reqwest::Error) -> Result<T, Error> {
+    Err(Error {
+        message: format!("Unsuccessful request: {:?}", err),
+    })
+}
+
+fn success_handler(res: reqwest::Response) -> Result<reqwest::Response, Error> {
+    if !res.status().is_success() {
+        return Err(Error {
+            message: format!("get: Unsuccessful response: {:?}", res.status().canonical_reason().unwrap()),
+        });
+    }
+
+    Ok(res)
+}
+
 fn get(url: &str) -> Result<reqwest::RequestBuilder, Error> {
-    return authenticated_request(reqwest::Method::GET, url);
+    authenticated_request(reqwest::Method::GET, url)
 }
 
 fn post(url: &str) -> Result<reqwest::RequestBuilder, Error> {
-    return authenticated_request(reqwest::Method::POST, url);
+    authenticated_request(reqwest::Method::POST, url)
 }
 
 fn create_release(
@@ -209,21 +222,21 @@ fn create_release(
         Ok(mut res) => match res.json() {
             Ok(json) => {
                 let out: Release = json;
-                return Ok(out);
+                Ok(out)
             }
             Err(err) => {
-                return Err(Error {
+                Err(Error {
                     message: format!(
                         "create: Error parsing json in response: {}",
                         err.to_string()
                     ),
-                });
+                })
             }
         },
         Err(err) => {
-            return Err(Error {
+            Err(Error {
                 message: format!("create: Error making request: {}", err.to_string()),
-            });
+            })
         }
     }
 }
@@ -252,27 +265,27 @@ fn upload(repo: &Repo, version: &String, file: &String) -> Result<Asset, Error> 
                 match res.json() {
                     Ok(json) => {
                         let out: Asset = json;
-                        return Ok(out);
+                        Ok(out)
                     }
                     Err(err) => {
-                        return Err(Error {
+                        Err(Error {
                             message: format!(
                                 "upload: Error parsing json in response: {}",
                                 err.to_string()
                             ),
-                        });
+                        })
                     }
                 }
             } else {
-                return Err(Error {
+                Err(Error {
                     message: String::from(res.status().canonical_reason().unwrap()),
-                });
+                })
             }
         },
         Err(err) => {
-            return Err(Error {
+            Err(Error {
                 message: format!("upload: Error making request: {}", err.to_string()),
-            });
+            })
         }
     }
 }
@@ -287,21 +300,21 @@ fn list_releases(repo: &Repo) -> Result<Vec<Release>, Error> {
         Ok(mut res) => match res.json() {
             Ok(json) => {
                 let out: Vec<Release> = json;
-                return Ok(out);
+                Ok(out)
             }
             Err(err) => {
-                return Err(Error {
+                Err(Error {
                     message: format!(
                         "list_releases: Error parsing json in response: {}",
                         err.to_string()
                     ),
-                });
+                })
             }
         },
         Err(err) => {
-            return Err(Error {
+            Err(Error {
                 message: format!("list_releases: Error making request: {}", err.to_string()),
-            });
+            })
         }
     }
 }
