@@ -140,26 +140,43 @@ fn main() {
     println!("Hello, world!");
 }
 
-fn get_release(repo: &Repo, version: &String) -> Result<Release, reqwest::Error> {
-    let client = reqwest::Client::new();
+fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
     let s = format!("https://api.github.com/repos/{}/{}/releases/tags/{}", repo.org.name, repo.name, version);
-    match Url::parse(&s) {
-        Ok(url) => {
-            let req = client.get(url);
-            let out: Release = req.send()?.json()?;
-            return Ok(out);
-        }
+
+    match authenticated_request(reqwest::Method::GET, &s)?.send() {
+        Ok(mut res) => match res.json() {
+            Ok(json) => {
+                let out: Release = json;
+                return Ok(out);
+            },
+            Err(err) => return Err(Error { message: format!("get: Error extracting json: {}", err.to_string()) }),
+        },
         Err(err) => {
             panic!("{:?}", err);
         }
     }
 }
 
-fn create_release(repo: & Repo, version: &String, target: &Option<String>) -> Result<Release, reqwest::Error> {
+#[derive(Debug)]
+struct Error {
+    message: String,
+}
+
+fn authenticated_request(method: reqwest::Method, url: &str) -> Result<reqwest::RequestBuilder, Error> {
     let client = reqwest::Client::new();
-    let s = format!("https://api.github.com/repos/{}/{}/releases", repo.org.name, repo.name);
     let token = env::var("GITHUB_TOKEN").unwrap();
     println!("{:?}", token);
+
+    match Url::parse(&url) {
+        Ok(u) => {
+            return Ok(client.request(method, u).bearer_auth(token));
+        },
+        Err(err) => return Err(Error { message: err.to_string() }),
+    }
+}
+
+fn create_release(repo: & Repo, version: &String, target: &Option<String>) -> Result<Release, Error> {
+    let s = format!("https://api.github.com/repos/{}/{}/releases", repo.org.name, repo.name);
 
     let mut map = HashMap::new();
     map.insert("tag_name", version);
@@ -168,54 +185,58 @@ fn create_release(repo: & Repo, version: &String, target: &Option<String>) -> Re
         map.insert("target_commitish", tgt);
     }
 
-    match Url::parse(&s) {
-        Ok(url) => {
-            let req = client.post(url).bearer_auth(token).json(&map);
-            let out: Release = req.send()?.json()?;
-            return Ok(out);
-        }
-        Err(err) => {
-            panic!("{:?}", err);
-        }
+    let client = authenticated_request(reqwest::Method::POST, &s)?;
+
+    let req = client.json(&map);
+    match req.send() {
+        Ok(mut res) => {
+            match res.json() {
+                Ok(json) => {
+                    let out: Release = json;
+                    return Ok(out);
+                },
+                Err(err) => return Err(Error { message: format!("create: Error parsing json in response: {}", err.to_string()) }),
+            }
+        },
+        Err(err) => return Err(Error { message: format!("create: Error making request: {}", err.to_string()) }),
     }
 }
 
-fn upload(repo: & Repo, version: &String, file: &String) -> Result<Asset, reqwest::Error> {
-    let client = reqwest::Client::new();
+fn upload(repo: & Repo, version: &String, file: &String) -> Result<Asset, Error> {
     let id = get_release(repo, version)?.id;
     let s = format!("https://uploads.github.com/repos/{}/{}/releases/{}/assets", repo.org.name, repo.name, id);
-    println!("{:?}", s);
-    let token = env::var("GITHUB_TOKEN").unwrap();
 
     let f = match File::open(file) {
         Ok(f) => f,
         Err(err) => panic!("{:?}", err),
     };
 
-    match Url::parse(&s) {
-        Ok(url) => {
-            let req = client.post(url).bearer_auth(token).header(CONTENT_TYPE, "multipart/form-data").query(&[("name", file)]).body(f);
-            println!("{:?}", req);
-            let out: Asset = req.send()?.json()?;
-            return Ok(out);
-        }
-        Err(err) => {
-            panic!("{:?}", err);
-        }
+    match authenticated_request(reqwest::Method::POST, &s)?.header(CONTENT_TYPE, "multipart/form-data").query(&[("name", file)]).body(f).send() {
+        Ok(mut res) => {
+            match res.json() {
+                Ok(json) => {
+                    let out: Asset = json;
+                    return Ok(out);
+                }
+                Err(err) => return Err(Error { message: format!("upload: Error parsing json in response: {}", err.to_string()) }),
+            }
+        },
+        Err(err) => return Err(Error { message: format!("upload: Error making request: {}", err.to_string()) }),
     }
 }
 
-fn list_releases(repo: & Repo) -> Result<Vec<Release>, reqwest::Error> {
-    let client = reqwest::Client::new();
+fn list_releases(repo: & Repo) -> Result<Vec<Release>, Error> {
     let s = format!("https://api.github.com/repos/{}/{}/releases", repo.org.name, repo.name);
-    match Url::parse(&s) {
-        Ok(url) => {
-            let req = client.get(url);
-            let out: Vec<Release> = req.send()?.json()?;
-            return Ok(out);
-        }
-        Err(err) => {
-            panic!("{:?}", err);
-        }
+
+    match authenticated_request(reqwest::Method::GET, &s)?.send() {
+        Ok(mut res) => match res.json() {
+            Ok(json) => {
+                let out: Vec<Release> = json;
+                return Ok(out);
+            },
+            Err(err) => return Err(Error { message: format!("list_releases: Error parsing json in response: {}", err.to_string()) }),
+        },
+        Err(err) => return Err(Error { message: format!("list_releases: Error making request: {}", err.to_string()) }),
+
     }
 }
