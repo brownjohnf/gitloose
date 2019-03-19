@@ -94,6 +94,17 @@ struct Repo<'a> {
     name: String,
 }
 
+
+fn run<T>(res: Result<T, Error>) {
+    std::process::exit(match res {
+        Ok(_) => 0,
+        Err(err) => {
+            eprintln!("{}", err.message);
+            1
+        }
+    });
+}
+
 fn main() {
     let opt = Opt::from_args();
 
@@ -105,30 +116,11 @@ fn main() {
     };
 
     match &opt.cmd {
-        Cmd::List {} => match list_releases(&repo) {
-            Ok(res) => println!("{:?}", res),
-            Err(err) => panic!("{:?}", err),
-        },
-        Cmd::Get { version } => match get_release(&repo, &version) {
-            Ok(res) => println!("{:?}", res),
-            Err(err) => panic!("{:?}", err),
-        },
-        Cmd::Create { version, target } => {
-            println!("{:?}", version);
-            println!("{:?}", target);
-
-            match create_release(&repo, &version, &target) {
-                Ok(res) => println!("{:?}", res),
-                Err(err) => panic!("{:?}", err),
-            }
-        }
-        Cmd::Upload { version, file } => match upload(&repo, &version, &file) {
-            Ok(res) => println!("{:?}", res),
-            Err(err) => panic!("{:?}", err),
-        },
-    }
-
-    println!("Hello, world!");
+        Cmd::List {} => run(list_releases(&repo)),
+        Cmd::Get { version } => run(get_release(&repo, &version)),
+        Cmd::Create { version, target } => run(create_release(&repo, &version, &target)),
+        Cmd::Upload { version, file } => run(upload(&repo, &version, &file)),
+    };
 }
 
 fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
@@ -138,15 +130,22 @@ fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
     );
 
     match get(&s)?.send() {
-        Ok(mut res) => match res.json() {
-            Ok(json) => {
-                let out: Release = json;
-                return Ok(out);
-            }
-            Err(err) => {
+        Ok(mut res) => {
+            if !res.status().is_success() {
                 return Err(Error {
-                    message: format!("get: Error extracting json: {}", err.to_string()),
+                    message: format!("get: Unsuccessful response: {:?}", res.status().canonical_reason().unwrap()),
                 });
+            }
+            match res.json() {
+                Ok(json) => {
+                    let out: Release = json;
+                    return Ok(out);
+                }
+                Err(err) => {
+                    return Err(Error {
+                        message: format!("get: Error extracting json: {}", err.to_string()),
+                    });
+                }
             }
         },
         Err(err) => {
@@ -166,7 +165,8 @@ fn authenticated_request(
 ) -> Result<reqwest::RequestBuilder, Error> {
     let client = reqwest::Client::new();
     let token = env::var("GITHUB_TOKEN").unwrap();
-    println!("{:?}", token);
+    println!("{:?}", &token);
+    println!("{:?}", &url);
 
     match Url::parse(&url) {
         Ok(u) => {
@@ -246,17 +246,26 @@ fn upload(repo: &Repo, version: &String, file: &String) -> Result<Asset, Error> 
         .body(f)
         .send()
     {
-        Ok(mut res) => match res.json() {
-            Ok(json) => {
-                let out: Asset = json;
-                return Ok(out);
-            }
-            Err(err) => {
+        Ok(mut res) => {
+            println!("{:?}", &res);
+            if res.status().is_success() {
+                match res.json() {
+                    Ok(json) => {
+                        let out: Asset = json;
+                        return Ok(out);
+                    }
+                    Err(err) => {
+                        return Err(Error {
+                            message: format!(
+                                "upload: Error parsing json in response: {}",
+                                err.to_string()
+                            ),
+                        });
+                    }
+                }
+            } else {
                 return Err(Error {
-                    message: format!(
-                        "upload: Error parsing json in response: {}",
-                        err.to_string()
-                    ),
+                    message: String::from(res.status().canonical_reason().unwrap()),
                 });
             }
         },
