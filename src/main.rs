@@ -7,8 +7,8 @@ extern crate structopt;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::Url;
 use std::collections::HashMap;
-use std::env;
 use std::fs::File;
+use std::{env, error, fmt};
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -103,6 +103,55 @@ enum Error {
     Io(std::io::Error),
 }
 
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Reqwest(ref err) => write!(f, "Reqwest error: {}", err),
+            Error::Request(ref err) => write!(f, "Request error: {}", err),
+            Error::Url(ref err) => write!(f, "Url error: {}", err),
+            Error::Io(ref err) => write!(f, "IO error: {}", err),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Error::Reqwest(ref err) => err.description(),
+            Error::Request(ref err) => "foobar",
+            Error::Url(ref err) => err.description(),
+            Error::Io(ref err) => err.description(),
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        match *self {
+            Error::Reqwest(ref err) => Some(err),
+            Error::Request(ref err) => None,
+            Error::Url(ref err) => Some(err),
+            Error::Io(ref err) => Some(err),
+        }
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Error {
+        Error::Reqwest(err)
+    }
+}
+
+impl From<reqwest::UrlError> for Error {
+    fn from(err: reqwest::UrlError) -> Error {
+        Error::Url(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Error {
+        Error::Io(err)
+    }
+}
+
 fn main() {
     let opt = Opt::from_args();
 
@@ -126,9 +175,9 @@ fn run<T: std::fmt::Debug>(res: Result<T, Error>) {
         Ok(out) => {
             eprintln!("{:?}", out);
             0
-        },
+        }
         Err(err) => {
-            eprintln!("{:?}", err);
+            eprintln!("{}", err);
             1
         }
     });
@@ -140,9 +189,9 @@ fn get_release(repo: &Repo, version: &String) -> Result<Release, Error> {
         repo.org.name, repo.name, version
     );
 
-    let res = get(&s)?.send().map_err(Error::Reqwest)?;
+    let res = get(&s)?.send()?;
     let mut succ = success_handler(res)?;
-    let json = succ.json().map_err(Error::Reqwest)?;
+    let json = succ.json()?;
     let out: Release = json;
     Ok(out)
 }
@@ -156,7 +205,7 @@ fn authenticated_request(
     println!("{:?}", &token);
     println!("{:?}", &url);
 
-    let u = Url::parse(&url).map_err(Error::Url)?;
+    let u = Url::parse(&url)?;
     Ok(client.request(method, u).bearer_auth(token))
 }
 
@@ -193,8 +242,8 @@ fn create_release(
         map.insert("target_commitish", tgt);
     }
 
-    let mut res = post(&s)?.json(&map).send().map_err(Error::Reqwest)?;
-    let json = res.json().map_err(Error::Reqwest)?;
+    let mut res = post(&s)?.json(&map).send()?;
+    let json = res.json()?;
     let out: Release = json;
     Ok(out)
 }
@@ -206,17 +255,16 @@ fn upload(repo: &Repo, version: &String, file: &String) -> Result<Asset, Error> 
         repo.org.name, repo.name, id
     );
 
-    let f = File::open(file).map_err(Error::Io)?;
+    let f = File::open(file)?;
 
     let res = post(&s)?
         .header(CONTENT_TYPE, "multipart/form-data")
         .query(&[("name", file)])
         .body(f)
-        .send()
-        .map_err(Error::Reqwest)?;
+        .send()?;
 
     let mut succ = success_handler(res)?;
-    let json = succ.json().map_err(Error::Reqwest)?;
+    let json = succ.json()?;
     let out: Asset = json;
     Ok(out)
 }
@@ -227,8 +275,8 @@ fn list_releases(repo: &Repo) -> Result<Vec<Release>, Error> {
         repo.org.name, repo.name
     );
 
-    let mut res = get(&s)?.send().map_err(Error::Reqwest)?;
-    let json = res.json().map_err(Error::Reqwest)?;
+    let mut res = get(&s)?.send()?;
+    let json = res.json()?;
     let out: Vec<Release> = json;
 
     Ok(out)
