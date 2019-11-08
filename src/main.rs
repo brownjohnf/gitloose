@@ -201,8 +201,7 @@ fn authenticated_request(
     url: &str,
 ) -> Result<reqwest::RequestBuilder, Error> {
     let client = reqwest::Client::new();
-    let token = env::var("GITHUB_TOKEN").unwrap();
-    println!("{:?}", &token);
+    let token = env::var("GITHUB_TOKEN").expect("missing env var GITHUB_TOKEN");
     println!("{:?}", &url);
 
     let u = Url::parse(&url)?;
@@ -264,8 +263,7 @@ fn upload(repo: &Repo, version: &String, file: &String) -> Result<Asset, Error> 
         .send()?;
 
     let mut succ = success_handler(res)?;
-    let json = succ.json()?;
-    let out: Asset = json;
+    let out: Asset = succ.json()?;
     Ok(out)
 }
 
@@ -276,8 +274,8 @@ fn list_releases(repo: &Repo) -> Result<Vec<Release>, Error> {
     );
 
     let mut res = get(&s)?.send()?;
-    let json = res.json()?;
-    let out: Vec<Release> = json;
+    println!("{:?}", res);
+    let out: Vec<Release> = res.json()?;
 
     Ok(out)
 }
